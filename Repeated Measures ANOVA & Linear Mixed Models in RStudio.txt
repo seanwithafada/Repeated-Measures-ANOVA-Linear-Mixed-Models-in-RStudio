@@ -1,0 +1,55 @@
+### set up random dataframe
+ID<-seq(1:90) # 90 participants
+Group<-rep(1:3,each=30) # 3 parallel groups with 30 participants per arm
+set.seed(123) # allow for the random sample to be reproducible
+Time01<-c(sample(1:200,90,replace=T)) # 90 measurements at first time point
+Time02<-c(sample(50:250,90,replace=T)) # 90 measurements at second time point
+Time03<-c(sample(100:300,90,replace=T)) # 90 measurements at third time point
+df<-data.frame(ID,Group,Time01,Time02,Time03)
+
+df$ID<-as.factor(df$ID)
+df$Group<-factor(df$Group,levels=c(1,2,3),labels=c("Group 01", "Group 02","Group 03"))
+
+### convert to Long
+library(tidyr)
+DF<-gather(df,Time,Measure,3:5)
+
+DF$Time<-as.factor(DF$Time)
+
+### plot
+library(ggplot2)
+g<-ggplot(DF,aes(x=Time,y=Measure,fill=Group))+stat_boxplot(geom="errorbar")+geom_boxplot()+theme_bw()
+(g+labs(x="",y="Measurement (units)")+coord_cartesian(ylim=c(0,300))+scale_y_continuous(breaks=seq(0,300,50))+
+    scale_x_discrete(breaks=c("Time01","Time02","Time03"),labels=c("Time 01","Time 02","Time 03"))+
+    theme(text = element_text(size=15),legend.title = element_blank(),legend.position="bottom"))
+
+### Repeated Measures ANOVA options
+library(ez)
+(option01<-ezANOVA(DF,dv=Measure,wid=ID,between=Group,within=Time,type=3)) # good for test of sphericity result
+
+library(afex)
+(option02<-aov_car(Measure ~ Group*Time + Error(ID/Time), data=DF)) # aligns with emmeans
+
+### linear mixed model options
+library(nlme)
+option03<-lme(Measure ~ Group*Time, random= ~1|ID/Time, data=DF) # linear mixed model
+anova(option03)
+
+library(lmerTest)
+option04 <- lmer(Measure ~ Group*Time + (1|ID), data=DF,REML=T) #  selects its own set of covariances
+anova(option04)
+
+### summary of F-ratios and p-values
+Effects<-rep(c("Group","Time","Group:Time"),by=2)
+Labels<-rep(c("F-ratio","P-value"),each=3)
+ez<-c(option01$ANOVA$F,option01$ANOVA$p)
+afex<-c(option02$anova_table$F,option02$anova_table$`Pr(>F)`)
+lme<-c(anova(option03)[-1,]$`F-value`,anova(option03)[-1,]$`p-value`)
+lmer<-c(anova(option04)$`F value`,anova(option04)$`Pr(>F)`)
+
+(output<-data.frame(Effects,Labels,ifelse(ez<0.001,"<0.001",round(ez,3)),
+                    ifelse(afex<0.001,"<0.001",round(afex,3)),
+                    ifelse(lme<0.001,"<0.001",round(lme,3)),
+                    ifelse(ez<0.001,"<0.001",round(lmer,3))))
+names(output)<-c("Effects","Labels","ez","afex","lme","lmer")
+output
